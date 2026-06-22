@@ -211,6 +211,12 @@ async def run_agent(session, agent_id, key, matrix_item, core_context):
     global started_agents, completed_agents, failed_agents
     started_agents += 1
     
+    # Initial jitter to spread concurrency and prevent rate limiting (0 to 15s)
+    jitter = (agent_id % 10) * 1.5 + (agent_id % 3) * 0.5
+    if jitter > 0:
+        print(f"⏳ [Agent {agent_id:03d}/100] Applying initial jitter of {jitter:.1f}s to spread API requests...")
+        await asyncio.sleep(jitter)
+        
     print(f"🚀 [Agent {agent_id:03d}/100 | Started: {started_agents}/100] Initializing {matrix_item['role']}. Focus: {matrix_item['focus'][:85]}...")
     
     headers = {
@@ -248,9 +254,32 @@ async def run_agent(session, agent_id, key, matrix_item, core_context):
             async with session.post(f"{BASE_URL}/chat/completions", json=payload, headers=headers, timeout=180) as resp:
                 elapsed = asyncio.get_event_loop().time() - start_time
                 if resp.status == 200:
-                    completed_agents += 1
                     result = await resp.json()
-                    content = result['choices'][0]['message']['content']
+                    if not result:
+                        raise ValueError("API returned empty JSON response")
+                    
+                    if "error" in result:
+                        err_detail = result["error"]
+                        err_msg = err_detail.get("message", str(err_detail))
+                        raise ValueError(f"API returned HTTP 200 but with error: {err_msg}")
+                        
+                    choices = result.get('choices')
+                    if not choices:
+                        raise ValueError(f"API response missing 'choices' key. Response: {result}")
+                    
+                    first_choice = choices[0]
+                    if not first_choice:
+                        raise ValueError(f"API response 'choices' list is empty. Response: {result}")
+                    
+                    message = first_choice.get('message')
+                    if not message:
+                        raise ValueError(f"API response choice missing 'message' key. Choice: {first_choice}")
+                    
+                    content = message.get('content')
+                    if content is None:
+                        raise ValueError(f"API response message missing 'content' key. Message: {message}")
+                    
+                    completed_agents += 1
                     print(f"✅ [Agent {agent_id:03d}/100 | Success: {completed_agents}/100] Completed on Attempt {attempt} in {elapsed:.2f}s (length: {len(content)} chars).")
                     return f"# AGENT SYSTEM {agent_id}: {matrix_item['role'].upper()}\n\n**🎯 Task Focus:** {matrix_item['focus']}\n\n{content}\n\n---\n\n"
                 
