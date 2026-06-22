@@ -23,7 +23,7 @@ if not API_KEYS:
     sys.exit(1)
 
 BASE_URL = "https://api.tokenrouter.com/v1"  # Replace with your actual Token Router endpoint if different
-MODEL_NAME = "minimax-m3"
+MODEL_NAME = "MiniMax-M3"
 
 # ==========================================
 # 🏢 THE FLAWLESS 100-AGENT PRODUCTION MATRIX
