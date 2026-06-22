@@ -331,6 +331,14 @@ async def main():
     with open(core_idea_file, "r", encoding="utf-8") as f:
         core_context = f.read()
 
+    # Dynamically append the GTM Master Playbook if it exists in the workspace
+    gtm_playbook_file = "AgentGrid_GTM_Master.md"
+    if os.path.exists(gtm_playbook_file):
+        print(f"Loading additional playbook context from {gtm_playbook_file}...")
+        with open(gtm_playbook_file, "r", encoding="utf-8") as f:
+            playbook_content = f.read()
+        core_context += "\n\n### MASTER GO-TO-MARKET PLAYBOOK (AgentGrid_GTM_Master.md):\n" + playbook_content
+
     print(f"Initializing decentralized swarm: Running {len(AGENT_MATRIX)} parallel agents across {len(API_KEYS)} keys...")
     
     # Custom high-concurrency connection pooling specifically for GitHub Actions environments
