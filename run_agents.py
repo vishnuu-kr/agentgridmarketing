@@ -11,19 +11,52 @@ if not os.path.exists("keys.txt"):
 with open("keys.txt", "r", encoding="utf-8") as f:
     raw_content = f.read()
 
-API_KEYS = []
+RAW_KEYS = []
 for part in raw_content.split(','):
     for line in part.split('\n'):
         cleaned = line.strip()
         if cleaned and not cleaned.startswith("#"):
-            API_KEYS.append(cleaned)
+            RAW_KEYS.append(cleaned)
 
-if not API_KEYS:
+if not RAW_KEYS:
     print("Error: No valid API keys found in keys.txt. Please add at least one API key.")
     sys.exit(1)
 
 BASE_URL = "https://api.tokenrouter.com/v1"  # Replace with your actual Token Router endpoint if different
 MODEL_NAME = "MiniMax-M3"
+
+async def validate_single_key(session, key, idx):
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json"
+    }
+    try:
+        async with session.get(f"{BASE_URL}/models", headers=headers, timeout=15) as resp:
+            if resp.status == 200:
+                return key, True, None
+            else:
+                err_text = await resp.text()
+                return key, False, f"HTTP {resp.status}: {err_text[:120]}"
+    except Exception as e:
+        return key, False, str(e)
+
+async def filter_active_keys(keys):
+    print(f"🔍 Checking {len(keys)} API keys from keys.txt concurrently...")
+    connector = aiohttp.TCPConnector(limit=100, ttl_dns_cache=300)
+    async with aiohttp.ClientSession(connector=connector) as session:
+        tasks = [validate_single_key(session, key, idx) for idx, key in enumerate(keys)]
+        results = await asyncio.gather(*tasks)
+        
+        valid_keys = []
+        for idx, (key, is_valid, err) in enumerate(results):
+            if is_valid:
+                valid_keys.append(key)
+            else:
+                masked_key = f"{key[:8]}...{key[-6:]}" if len(key) > 14 else "invalid_key"
+                print(f"⚠️ Key #{idx+1} ({masked_key}) is inactive or exhausted: {err}")
+        
+        print(f"✅ Key validation complete. Active keys: {len(valid_keys)}/{len(keys)}")
+        return valid_keys
 
 # ==========================================
 # 🏢 THE FLAWLESS 100-AGENT PRODUCTION MATRIX
@@ -154,7 +187,8 @@ CRITICAL OPERATIONAL REQUIREMENT:
 You must perform live web searches implicitly using your tools to gather up-to-date competitive data, real internet trends, current discussions on Reddit/Hacker News/G2, and the exact state of the marketing landscape as of 2026. Do not rely on assumptions. Look up the facts.
 
 STRICT OUTPUT FORMAT MANDATE:
-Your output must be absolutely flawless, highly professional, completely clean, and free of generic AI introductions or conversational fluff. Start directly with the markdown headers.
+- Your output must be absolutely flawless, highly professional, completely clean, and free of generic AI introductions or conversational fluff. Start directly with the markdown headers.
+- Do NOT output raw tool calls, function call blocks, or XML tags (such as `<function_calls>`, `<invoke>`, or `<error>`). If active web search tools are not available or fail in this session, proceed directly to generating the complete strategic analysis using your internal knowledge.
 
 1. ## 📊 EXECUTIVE DIAGNOSIS
 - Deliver a sharp, data-backed assessment of how the 'core_idea.md' interacts with current real-world market dynamics discovered via search.
@@ -249,6 +283,15 @@ async def run_agent(session, agent_id, key, matrix_item, core_context):
                 return f"# AGENT SYSTEM {agent_id}: {matrix_item['role'].upper()}\n\n❌ Runtime Exception Triggered (after {max_retries} attempts): {str(e)}\n\n---\n\n"
 
 async def main():
+    # Filter active keys before starting
+    API_KEYS = await filter_active_keys(RAW_KEYS)
+    if not API_KEYS:
+        print("Error: None of the API keys in keys.txt are valid or active. Please check your credentials.")
+        sys.exit(1)
+        
+    if len(API_KEYS) < len(AGENT_MATRIX):
+        print(f"Warning: Found {len(API_KEYS)} active keys for {len(AGENT_MATRIX)} agents. Keys will be cycled.")
+
     # Detect the correct core idea file
     core_idea_file = "core_idea.md"
     if os.path.exists("core_idea_agent.md"):
@@ -269,7 +312,7 @@ async def main():
     async with aiohttp.ClientSession(connector=connector) as session:
         tasks = []
         for i, task_item in enumerate(AGENT_MATRIX):
-            # Rotates seamlessly across the 100-key pool
+            # Rotates seamlessly across the valid keys pool
             key = API_KEYS[i % len(API_KEYS)]
             tasks.append(run_agent(session, i + 1, key, task_item, core_context))
         
