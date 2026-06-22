@@ -171,7 +171,17 @@ Your output must be absolutely flawless, highly professional, completely clean, 
 Maintain an analytical, sharp, premium, and direct brand tone. Provide maximum depth.
 """
 
+# Progress counters
+started_agents = 0
+completed_agents = 0
+failed_agents = 0
+
 async def run_agent(session, agent_id, key, matrix_item, core_context):
+    global started_agents, completed_agents, failed_agents
+    started_agents += 1
+    
+    print(f"🚀 [Agent {agent_id:03d}/100 | Started: {started_agents}/100] Initializing {matrix_item['role']}. Focus: {matrix_item['focus'][:85]}...")
+    
     headers = {
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json"
@@ -198,19 +208,27 @@ async def run_agent(session, agent_id, key, matrix_item, core_context):
         "temperature": 0.25  # Low temperature forces hyper-analytical, precise reasoning patterns
     }
     
+    print(f"📡 [Agent {agent_id:03d}/100] Sending request to Token Router API ({MODEL_NAME})...")
+    start_time = asyncio.get_event_loop().time()
+    
     try:
         async with session.post(f"{BASE_URL}/chat/completions", json=payload, headers=headers, timeout=180) as resp:
+            elapsed = asyncio.get_event_loop().time() - start_time
             if resp.status == 200:
+                completed_agents += 1
                 result = await resp.json()
                 content = result['choices'][0]['message']['content']
-                print(f"[✔] Agent {agent_id} | {matrix_item['role']} | Completed Output.")
+                print(f"✅ [Agent {agent_id:03d}/100 | Success: {completed_agents}/100] Completed output in {elapsed:.2f}s (length: {len(content)} chars).")
                 return f"# AGENT SYSTEM {agent_id}: {matrix_item['role'].upper()}\n\n**🎯 Task Focus:** {matrix_item['focus']}\n\n{content}\n\n---\n\n"
             else:
+                failed_agents += 1
                 err_text = await resp.text()
-                print(f"[❌] Agent {agent_id} failed with status {resp.status}")
+                print(f"❌ [Agent {agent_id:03d}/100 | Failure: {failed_agents}/100] Failed with HTTP {resp.status} in {elapsed:.2f}s. Response: {err_text[:200]}")
                 return f"# AGENT SYSTEM {agent_id}: {matrix_item['role'].upper()}\n\n❌ API Connection Refused (Status {resp.status}): {err_text}\n\n---\n\n"
     except Exception as e:
-        print(f"[❌] Agent {agent_id} encountered an exception.")
+        failed_agents += 1
+        elapsed = asyncio.get_event_loop().time() - start_time
+        print(f"⚠️ [Agent {agent_id:03d}/100 | Exception: {failed_agents}/100] Encountered exception in {elapsed:.2f}s: {str(e)}")
         return f"# AGENT SYSTEM {agent_id}: {matrix_item['role'].upper()}\n\n❌ Runtime Exception Triggered: {str(e)}\n\n---\n\n"
 
 async def main():
