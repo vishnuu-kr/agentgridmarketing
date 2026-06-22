@@ -251,7 +251,7 @@ async def run_agent(session, agent_id, key, matrix_item, core_context):
         start_time = asyncio.get_event_loop().time()
         
         try:
-            async with session.post(f"{BASE_URL}/chat/completions", json=payload, headers=headers, timeout=180) as resp:
+            async with session.post(f"{BASE_URL}/chat/completions", json=payload, headers=headers, timeout=450) as resp:
                 elapsed = asyncio.get_event_loop().time() - start_time
                 if resp.status == 200:
                     result = await resp.json()
@@ -297,7 +297,8 @@ async def run_agent(session, agent_id, key, matrix_item, core_context):
                     return f"# AGENT SYSTEM {agent_id}: {matrix_item['role'].upper()}\n\n❌ API Connection Refused (Status {resp.status} after {max_retries} attempts): {err_text}\n\n---\n\n"
         except Exception as e:
             elapsed = asyncio.get_event_loop().time() - start_time
-            print(f"⚠️ [Agent {agent_id:03d}/100 | Attempt {attempt}/{max_retries}] Exception in {elapsed:.2f}s: {str(e)}")
+            err_desc = f"{type(e).__name__}: {str(e)}" if str(e) else type(e).__name__
+            print(f"⚠️ [Agent {agent_id:03d}/100 | Attempt {attempt}/{max_retries}] Exception in {elapsed:.2f}s: {err_desc}")
             
             if attempt < max_retries:
                 backoff = 3 * attempt
@@ -306,7 +307,7 @@ async def run_agent(session, agent_id, key, matrix_item, core_context):
             else:
                 failed_agents += 1
                 print(f"❌ [Agent {agent_id:03d}/100 | Failure: {failed_agents}/100] Failed permanently after {max_retries} exceptions.")
-                return f"# AGENT SYSTEM {agent_id}: {matrix_item['role'].upper()}\n\n❌ Runtime Exception Triggered (after {max_retries} attempts): {str(e)}\n\n---\n\n"
+                return f"# AGENT SYSTEM {agent_id}: {matrix_item['role'].upper()}\n\n❌ Runtime Exception Triggered (after {max_retries} attempts): {err_desc}\n\n---\n\n"
 
 async def main():
     # Filter active keys before starting
